@@ -9,12 +9,10 @@ package main
 
 import (
 	"fmt"
-	"time"
-
 	"github.com/sparrc/go-ping"
 )
 
-func pingURL(url string) time.Duration {
+func pingURL(url string, ch chan<- string) {
 	pinger, err := ping.NewPinger(url)
 	if err != nil {
 		panic(err)
@@ -22,17 +20,21 @@ func pingURL(url string) time.Duration {
 	pinger.Count = 3
 	pinger.SetPrivileged(true)
 	pinger.Run()
-	return pinger.Statistics().AvgRtt
+	ch <- fmt.Sprintf("%v: %v", url, pinger.Statistics().AvgRtt)
 }
 
 func main() {
+	ch := make(chan string)
 	urls := make([]string, 3)
 	urls[0] = "www.google.com"
 	urls[1] = "www.amazon.com"
 	urls[2] = "www.apple.com"
 
 	for _, url := range urls {
-		fmt.Println(url, pingURL(url))
+		go pingURL(url, ch)
 	}
 
+	for range urls {
+		fmt.Println(<-ch)
+	}
 }
