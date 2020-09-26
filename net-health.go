@@ -40,31 +40,31 @@ func getLocalIPs() []string {
 	}
 	return localIPS
 }
-func main() {
-	ch := make(chan pingPoint)
+
+func getRemoteURLs() []string {
 	remoteUrls := make([]string, 3)
 	remoteUrls[0] = "www.google.com"
 	remoteUrls[1] = "www.amazon.com"
 	remoteUrls[2] = "www.apple.com"
+	return remoteUrls
+}
 
-	for _, url := range remoteUrls {
+func main() {
+	ch := make(chan pingPoint)
+	hosts := getRemoteURLs()
+
+	hosts = append(hosts, getLocalIPs()...)
+
+	for _, url := range hosts {
 		go pingURL(url, ch)
+		time.Sleep(5 * time.Millisecond)
 	}
 
-	for range remoteUrls {
-		pinged := <-ch
-		fmt.Printf("%v: %v - %v\n", pinged.timestamp, pinged.url, pinged.meanPingtime)
-	}
-
-	localIPs := getLocalIPs()
-	for _, addr := range localIPs {
-		go pingURL(addr, ch)
-	}
-
-	for range localIPs {
+	for range hosts {
 		pinged := <-ch
 		if pinged.count > 0 {
 			fmt.Printf("%v: %v - %v\n", pinged.timestamp, pinged.url, pinged.meanPingtime)
 		}
 	}
+
 }
