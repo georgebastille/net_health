@@ -8,24 +8,30 @@ to give the executable permission to send ping requests.
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/sparrc/go-ping"
+	"os"
 	"time"
 )
 
 type pingPoint struct {
-	timestamp    time.Time
-	url          string
-	count        int
-	meanPingtime time.Duration
+	Timestamp    time.Time
+	Url          string
+	Count        int
+	MeanPingtime time.Duration
 }
 
-type activeUrl struct {
+func (p pingPoint) String() string {
+	return fmt.Sprintf("%v: %v - %v", p.Timestamp, p.Url, p.MeanPingtime)
+}
+
+type activeURL struct {
 	url    string
 	active bool
 }
 
-func checkURL(url string, ch chan<- activeUrl) {
+func checkURL(url string, ch chan<- activeURL) {
 	pinger, err := ping.NewPinger(url)
 	if err != nil {
 		panic(err)
@@ -34,7 +40,7 @@ func checkURL(url string, ch chan<- activeUrl) {
 	pinger.Count = 1
 	pinger.Timeout, _ = time.ParseDuration("1s")
 	pinger.Run()
-	ch <- activeUrl{url, pinger.PacketsRecv > 0}
+	ch <- activeURL{url, pinger.PacketsRecv > 0}
 }
 
 func pingURL(url string, ch chan<- pingPoint) {
@@ -69,9 +75,19 @@ func getRemoteURLs() []string {
 }
 
 func main() {
+
+	filename := "responseTimes.json"
+
+	f, err := os.OpenFile(filename, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
+	if err != nil {
+		panic(err)
+	}
+	json_out := json.NewEncoder(f)
+
+	defer f.Close()
 	hosts := getRemoteURLs()
 	hosts = append(hosts, getLocalIPs()...)
-	ch := make(chan activeUrl)
+	ch := make(chan activeURL)
 	fmt.Printf("Testing %v local and remote hosts...\n", len(hosts))
 	for _, url := range hosts {
 		go checkURL(url, ch)
@@ -96,8 +112,9 @@ func main() {
 
 	for range activeUrls {
 		pinged := <-ch2
-		if pinged.count > 0 {
-			fmt.Printf("%v: %v - %v\n", pinged.timestamp, pinged.url, pinged.meanPingtime)
+		if pinged.Count > 0 {
+			fmt.Println(pinged)
+			json_out.Encode(pinged)
 		}
 	}
 
