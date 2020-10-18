@@ -11,6 +11,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/sparrc/go-ping"
+	"gonum.org/v1/plot"
+	"gonum.org/v1/plot/plotter"
+	"gonum.org/v1/plot/vg"
+	"gonum.org/v1/plot/vg/draw"
+	"image/color"
+	"log"
 	"os"
 	"time"
 )
@@ -78,11 +84,69 @@ func main() {
 
 	filename := "responseTimes.json"
 
+	f, err := os.Open(filename)
+	if err != nil {
+		panic(err)
+	}
+
+	dec := json.NewDecoder(f)
+	xs := make([]float64, 0)
+	ys := make([]float64, 0)
+	// while the array contains values
+	for dec.More() {
+		var m pingPoint
+		// decode an array value (Message)
+		err := dec.Decode(&m)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		fmt.Println(m)
+		xs = append(xs, float64(m.Timestamp.Unix()))
+		ys = append(ys, float64(m.MeanPingtime))
+
+	}
+	xticks := plot.TimeTicks{Format: "2006-01-02\n15:04:32.132"}
+	data := make(plotter.XYs, len(xs))
+	for i := range data {
+		data[i].X = xs[i]
+		data[i].Y = ys[i]
+	}
+
+	p, err := plot.New()
+	if err != nil {
+		log.Panic(err)
+	}
+	p.Title.Text = "Time Series"
+	p.X.Tick.Marker = xticks
+	p.Y.Label.Text = "Number of Gophers\n(Billions)"
+	p.Add(plotter.NewGrid())
+
+	line, points, err := plotter.NewLinePoints(data)
+	if err != nil {
+		log.Panic(err)
+	}
+	line.Color = color.RGBA{G: 255, A: 255}
+	points.Shape = draw.CircleGlyph{}
+	points.Color = color.RGBA{R: 255, A: 255}
+
+	p.Add(line, points)
+
+	err = p.Save(20*vg.Centimeter, 7*vg.Centimeter, "timeseries.png")
+	if err != nil {
+		log.Panic(err)
+	}
+}
+
+func collectTimingData() {
+
+	filename := "responseTimes.json"
+
 	f, err := os.OpenFile(filename, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
 	if err != nil {
 		panic(err)
 	}
-	json_out := json.NewEncoder(f)
+	jsonOut := json.NewEncoder(f)
 
 	defer f.Close()
 	hosts := getRemoteURLs()
@@ -114,7 +178,7 @@ func main() {
 		pinged := <-ch2
 		if pinged.Count > 0 {
 			fmt.Println(pinged)
-			json_out.Encode(pinged)
+			jsonOut.Encode(pinged)
 		}
 	}
 
