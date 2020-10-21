@@ -80,7 +80,13 @@ func getRemoteURLs() []string {
 	return remoteUrls
 }
 
+type coordSeries struct {
+	xs []float64
+	ys []float64
+}
+
 func main() {
+	collectTimingData()
 
 	filename := "responseTimes.json"
 
@@ -90,8 +96,7 @@ func main() {
 	}
 
 	dec := json.NewDecoder(f)
-	xs := make([]float64, 0)
-	ys := make([]float64, 0)
+	series := make(map[string]coordSeries)
 	// while the array contains values
 	for dec.More() {
 		var m pingPoint
@@ -102,15 +107,24 @@ func main() {
 		}
 
 		fmt.Println(m)
+
+		var xs = series[m.Url].xs
 		xs = append(xs, float64(m.Timestamp.Unix()))
+		var ys = series[m.Url].ys
 		ys = append(ys, float64(m.MeanPingtime))
+		series[m.Url] = coordSeries{xs, ys}
 
 	}
-	xticks := plot.TimeTicks{Format: "2006-01-02\n15:04:32.132"}
-	data := make(plotter.XYs, len(xs))
-	for i := range data {
-		data[i].X = xs[i]
-		data[i].Y = ys[i]
+	xticks := plot.TimeTicks{Format: "2006-01-02\n15:04:32"}
+
+	plotSeries := make(map[string]plotter.XYs)
+	for url, values := range series {
+		data := make(plotter.XYs, len(values.xs))
+		for i := range data {
+			data[i].X = values.xs[i]
+			data[i].Y = values.ys[i]
+		}
+		plotSeries[url] = data
 	}
 
 	p, err := plot.New()
@@ -119,18 +133,21 @@ func main() {
 	}
 	p.Title.Text = "Time Series"
 	p.X.Tick.Marker = xticks
-	p.Y.Label.Text = "Number of Gophers\n(Billions)"
+	p.Y.Label.Text = "Ping Time"
 	p.Add(plotter.NewGrid())
 
-	line, points, err := plotter.NewLinePoints(data)
-	if err != nil {
-		log.Panic(err)
-	}
-	line.Color = color.RGBA{G: 255, A: 255}
-	points.Shape = draw.CircleGlyph{}
-	points.Color = color.RGBA{R: 255, A: 255}
+	for _, data := range plotSeries {
 
-	p.Add(line, points)
+		line, points, err := plotter.NewLinePoints(data)
+		if err != nil {
+			log.Panic(err)
+		}
+		line.Color = color.RGBA{G: 255, A: 255}
+		points.Shape = draw.CircleGlyph{}
+		points.Color = color.RGBA{R: 255, A: 255}
+
+		p.Add(line, points)
+	}
 
 	err = p.Save(20*vg.Centimeter, 7*vg.Centimeter, "timeseries.png")
 	if err != nil {
