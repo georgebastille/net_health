@@ -9,6 +9,7 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"github.com/sparrc/go-ping"
 	"gonum.org/v1/plot"
@@ -17,19 +18,20 @@ import (
 	"gonum.org/v1/plot/vg/draw"
 	"image/color"
 	"log"
+	"net/http"
 	"os"
 	"time"
 )
 
 type pingPoint struct {
 	Timestamp    time.Time
-	Url          string
+	URL          string
 	Count        int
 	MeanPingtime time.Duration
 }
 
 func (p pingPoint) String() string {
-	return fmt.Sprintf("%v: %v - %v", p.Timestamp, p.Url, p.MeanPingtime)
+	return fmt.Sprintf("%v: %v - %v", p.Timestamp, p.URL, p.MeanPingtime)
 }
 
 type activeURL struct {
@@ -71,13 +73,13 @@ func getLocalIPs() []string {
 }
 
 func getRemoteURLs() []string {
-	remoteUrls := make([]string, 4)
-	remoteUrls[0] = "www.google.com"
-	remoteUrls[1] = "www.amazon.com"
-	remoteUrls[2] = "www.apple.com"
-	remoteUrls[3] = "www.bbc.co.uk"
+	remoteURLs := make([]string, 4)
+	remoteURLs[0] = "www.google.com"
+	remoteURLs[1] = "www.amazon.com"
+	remoteURLs[2] = "www.apple.com"
+	remoteURLs[3] = "www.bbc.co.uk"
 
-	return remoteUrls
+	return remoteURLs
 }
 
 type coordSeries struct {
@@ -86,7 +88,26 @@ type coordSeries struct {
 }
 
 func main() {
-	collectTimingData()
+	ticker := time.NewTicker(10 * time.Second)
+	go func() {
+		for range ticker.C {
+			collectTimingData()
+			renderPlot()
+		}
+	}()
+	servePlot()
+}
+
+func servePlot() {
+	port := flag.String("p", "8000", "Port server listens to")
+	flag.Parse()
+	http.Handle("/", http.FileServer(http.Dir("./static")))
+	log.Printf("Listening on port %v", *port)
+	log.Fatal(http.ListenAndServe("0.0.0.0:"+*port, nil))
+}
+func renderPlot() {
+	// TODO:
+	// Create a plot per url, and then lets serve a basic template
 
 	filename := "responseTimes.json"
 
@@ -98,24 +119,22 @@ func main() {
 	dec := json.NewDecoder(f)
 	series := make(map[string]coordSeries)
 	// while the array contains values
+	var m pingPoint
 	for dec.More() {
-		var m pingPoint
 		// decode an array value (Message)
 		err := dec.Decode(&m)
 		if err != nil {
 			log.Fatal(err)
 		}
 
-		fmt.Println(m)
-
-		var xs = series[m.Url].xs
+		var xs = series[m.URL].xs
 		xs = append(xs, float64(m.Timestamp.Unix()))
-		var ys = series[m.Url].ys
-		ys = append(ys, float64(m.MeanPingtime))
-		series[m.Url] = coordSeries{xs, ys}
+		var ys = series[m.URL].ys
+		ys = append(ys, float64(m.MeanPingtime)/1e6)
+		series[m.URL] = coordSeries{xs, ys}
 
 	}
-	xticks := plot.TimeTicks{Format: "2006-01-02\n15:04:32"}
+	xticks := plot.TimeTicks{Format: "2020-12-25\n15:04:32"}
 
 	plotSeries := make(map[string]plotter.XYs)
 	for url, values := range series {
@@ -131,9 +150,9 @@ func main() {
 	if err != nil {
 		log.Panic(err)
 	}
-	p.Title.Text = "Time Series"
+	p.Title.Text = "Ping Times"
 	p.X.Tick.Marker = xticks
-	p.Y.Label.Text = "Ping Time"
+	p.Y.Label.Text = "Ping Time (ms)"
 	p.Add(plotter.NewGrid())
 
 	for _, data := range plotSeries {
@@ -142,6 +161,7 @@ func main() {
 		if err != nil {
 			log.Panic(err)
 		}
+		// Hash url to get colour
 		line.Color = color.RGBA{G: 255, A: 255}
 		points.Shape = draw.CircleGlyph{}
 		points.Color = color.RGBA{R: 255, A: 255}
@@ -149,7 +169,7 @@ func main() {
 		p.Add(line, points)
 	}
 
-	err = p.Save(20*vg.Centimeter, 7*vg.Centimeter, "timeseries.png")
+	err = p.Save(20*vg.Centimeter, 7*vg.Centimeter, "./static/timeseries.png")
 	if err != nil {
 		log.Panic(err)
 	}
@@ -175,23 +195,23 @@ func collectTimingData() {
 		time.Sleep(1 * time.Millisecond)
 	}
 
-	activeUrls := make([]string, 0)
+	activeURLs := make([]string, 0)
 	for range hosts {
 		checked := <-ch
 
 		if checked.active {
-			activeUrls = append(activeUrls, checked.url)
+			activeURLs = append(activeURLs, checked.url)
 		}
 	}
 
-	fmt.Printf("Collecting ping Statistics for %v hosts...\n", len(activeUrls))
+	fmt.Printf("Collecting ping Statistics for %v hosts...\n", len(activeURLs))
 	ch2 := make(chan pingPoint)
-	for _, url := range activeUrls {
+	for _, url := range activeURLs {
 		go pingURL(url, ch2)
 		time.Sleep(25 * time.Millisecond)
 	}
 
-	for range activeUrls {
+	for range activeURLs {
 		pinged := <-ch2
 		if pinged.Count > 0 {
 			fmt.Println(pinged)
