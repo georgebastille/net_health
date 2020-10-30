@@ -108,6 +108,12 @@ func servePlot() {
 func renderPlot() {
 	// TODO:
 	// Create a plot per url, and then lets serve a basic template
+	if _, err := os.Stat("./static/"); os.IsNotExist(err) {
+		err := os.Mkdir("./static/", 0755)
+		if err != nil {
+			panic(err)
+		}
+	}
 
 	filename := "responseTimes.json"
 
@@ -146,16 +152,14 @@ func renderPlot() {
 		plotSeries[url] = data
 	}
 
-	p, err := plot.New()
-	if err != nil {
-		log.Panic(err)
-	}
-	p.Title.Text = "Ping Times"
-	p.X.Tick.Marker = xticks
-	p.Y.Label.Text = "Ping Time (ms)"
-	p.Add(plotter.NewGrid())
-
-	for _, data := range plotSeries {
+	for url, data := range plotSeries {
+		p, err := plot.New()
+		if err != nil {
+			log.Panic(err)
+		}
+		p.X.Tick.Marker = xticks
+		p.Y.Label.Text = "Ping Time (ms)"
+		p.Add(plotter.NewGrid())
 
 		line, points, err := plotter.NewLinePoints(data)
 		if err != nil {
@@ -167,12 +171,14 @@ func renderPlot() {
 		points.Color = color.RGBA{R: 255, A: 255}
 
 		p.Add(line, points)
+		p.Title.Text = fmt.Sprintf("Ping for %s", url)
+		outImg := fmt.Sprintf("./static/%s.png", url)
+		err = p.Save(20*vg.Centimeter, 7*vg.Centimeter, outImg)
+		if err != nil {
+			log.Panic(err)
+		}
 	}
 
-	err = p.Save(20*vg.Centimeter, 7*vg.Centimeter, "./static/timeseries.png")
-	if err != nil {
-		log.Panic(err)
-	}
 }
 
 func collectTimingData() {
